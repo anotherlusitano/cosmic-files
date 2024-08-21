@@ -2377,7 +2377,7 @@ impl Tab {
 
     pub fn empty_view(&self, has_hidden: bool) -> Element<Message> {
         let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
-            
+
         //TODO: left clicking on an empty folder does not clear context menu
         widget::column::with_children(vec![widget::container(
             widget::column::with_children(match self.mode {
