@@ -62,7 +62,7 @@ use crate::{
     fl, home_dir,
     key_bind::key_binds,
     localize::LANGUAGE_SORTER,
-    menu, mime_app,
+    menu, mime_app, mime_icon,
     mounter::{mounters, MounterItem, MounterItems, MounterKey, Mounters},
     operation::{Operation, ReplaceResult},
     spawn_detached::spawn_detached,
@@ -2015,11 +2015,49 @@ impl Application for App {
                         tab::Command::MoveToTrash(paths) => {
                             self.operation(Operation::Delete { paths });
                         }
-                        tab::Command::OpenFile(item_path) => {
-                            match open::that_detached(&item_path) {
-                                Ok(()) => (),
-                                Err(err) => {
-                                    log::warn!("failed to open {:?}: {}", item_path, err);
+                        tab::Command::OpenFile(path) => {
+                            let mut found_desktop_exec = false;
+                            if mime_icon::mime_for_path(&path) == "application/x-desktop" {
+                                match freedesktop_entry_parser::parse_entry(&path) {
+                                    Ok(entry) => {
+                                        match entry.section("Desktop Entry").attr("Exec") {
+                                            Some(exec) => {
+                                                match mime_app::exec_to_command(exec, None) {
+                                                    Some(mut command) => {
+                                                        match spawn_detached(&mut command) {
+                                                            Ok(()) => {
+                                                                found_desktop_exec = true;
+                                                            }
+                                                            Err(err) => {
+                                                                log::warn!(
+                                                                    "failed to execute {:?}: {}",
+                                                                    path,
+                                                                    err
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+                                                    None => {
+                                                        log::warn!("failed to parse {:?}: invalid Desktop Entry/Exec", path);
+                                                    }
+                                                }
+                                            }
+                                            None => {
+                                                log::warn!("failed to parse {:?}: missing Desktop Entry/Exec", path);
+                                            }
+                                        }
+                                    }
+                                    Err(err) => {
+                                        log::warn!("failed to parse {:?}: {}", path, err);
+                                    }
+                                };
+                            }
+                            if !found_desktop_exec {
+                                match open::that_detached(&path) {
+                                    Ok(()) => (),
+                                    Err(err) => {
+                                        log::warn!("failed to open {:?}: {}", path, err);
+                                    }
                                 }
                             }
                         }
