@@ -2340,7 +2340,7 @@ impl Application for App {
                         return Command::batch([get_layer_surface(SctkLayerSurfaceSettings {
                             id: surface_id,
                             layer: Layer::Bottom,
-                            keyboard_interactivity: KeyboardInteractivity::None,
+                            keyboard_interactivity: KeyboardInteractivity::OnDemand,
                             pointer_interactivity: true,
                             anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
                             output: IcedOutput::Output(output),
