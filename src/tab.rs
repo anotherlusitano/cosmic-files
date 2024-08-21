@@ -104,6 +104,7 @@ fn button_appearance(
     focused: bool,
     accent: bool,
     condensed_radius: bool,
+    desktop: bool,
 ) -> widget::button::Appearance {
     let cosmic = theme.cosmic();
     let mut appearance = widget::button::Appearance::new();
@@ -115,6 +116,10 @@ fn button_appearance(
         } else {
             appearance.background = Some(Color::from(cosmic.bg_component_color()).into());
         }
+    } else if desktop {
+        appearance.background = Some(Color::from(cosmic.bg_color()).into());
+        appearance.icon_color = Some(Color::from(cosmic.on_bg_color()));
+        appearance.text_color = Some(Color::from(cosmic.on_bg_color()));
     }
     if focused && accent {
         appearance.outline_width = 1.0;
@@ -130,20 +135,25 @@ fn button_appearance(
     appearance
 }
 
-fn button_style(selected: bool, accent: bool, condensed_radius: bool) -> theme::Button {
+fn button_style(
+    selected: bool,
+    accent: bool,
+    condensed_radius: bool,
+    desktop: bool,
+) -> theme::Button {
     //TODO: move to libcosmic?
     theme::Button::Custom {
         active: Box::new(move |focused, theme| {
-            button_appearance(theme, selected, focused, accent, condensed_radius)
+            button_appearance(theme, selected, focused, accent, condensed_radius, desktop)
         }),
         disabled: Box::new(move |theme| {
-            button_appearance(theme, selected, false, accent, condensed_radius)
+            button_appearance(theme, selected, false, accent, condensed_radius, desktop)
         }),
         hovered: Box::new(move |focused, theme| {
-            button_appearance(theme, selected, focused, accent, condensed_radius)
+            button_appearance(theme, selected, focused, accent, condensed_radius, desktop)
         }),
         pressed: Box::new(move |focused, theme| {
-            button_appearance(theme, selected, focused, accent, condensed_radius)
+            button_appearance(theme, selected, focused, accent, condensed_radius, desktop)
         }),
     }
 }
@@ -2460,13 +2470,19 @@ impl Tab {
         let (cols, column_spacing) = {
             let width_m1 = width.checked_sub(item_width).unwrap_or(0);
             let cols_m1 = width_m1 / (item_width + space_xxs as usize);
-            let cols = cols_m1;
+            let cols = cols_m1 + 1;
             let spacing = width_m1
                 .checked_div(cols_m1)
                 .unwrap_or(0)
                 .checked_sub(item_width)
                 .unwrap_or(0);
             (cols, spacing as u16)
+        };
+
+        let rows = {
+            let height_m1 = height.checked_sub(item_height).unwrap_or(0);
+            let rows_m1 = height_m1 / (item_height + space_xxs as usize);
+            rows_m1 + 1
         };
 
         let mut grid = widget::grid()
@@ -2485,7 +2501,9 @@ impl Tab {
             let mut count = 0;
             let mut col = 0;
             let mut row = 0;
+            let mut page_row = 0;
             let mut hidden = 0;
+            let mut grid_elements = Vec::new();
             for &(i, item) in items.iter() {
                 if !show_hidden && item.hidden {
                     item.pos_opt.set(None);
@@ -2510,11 +2528,16 @@ impl Tab {
                             .size(icon_sizes.grid()),
                     )
                     .padding(space_xxxs)
-                    .style(button_style(item.selected, false, false)),
+                    .style(button_style(item.selected, false, false, false)),
                     widget::button(widget::text::body(&item.display_name))
                         .id(item.button_id.clone())
                         .padding([0, space_xxxs])
-                        .style(button_style(item.selected, true, true)),
+                        .style(button_style(
+                            item.selected,
+                            true,
+                            true,
+                            matches!(self.mode, Mode::Desktop),
+                        )),
                 ];
 
                 let mut column = widget::column::with_capacity(buttons.len())
@@ -2597,15 +2620,39 @@ impl Tab {
                     .on_double_click(move |_| Message::DoubleClick(Some(i)))
                     .on_release(move |_| Message::ClickRelease(Some(i)))
                     .on_middle_press(move |_| Message::MiddleClick(i));
-                grid = grid.push(mouse_area);
+
+                //TODO: error if the row or col is already set?
+                while grid_elements.len() <= row {
+                    grid_elements.push(Vec::new());
+                }
+                grid_elements[row].push(mouse_area);
 
                 count += 1;
-                col += 1;
-                if col >= cols {
-                    col = 0;
+                if matches!(self.mode, Mode::Desktop) {
                     row += 1;
-                    grid = grid.insert_row();
+                    if row >= page_row + rows {
+                        row = 0;
+                        col += 1;
+                    }
+                    if col >= cols {
+                        col = 0;
+                        page_row += rows;
+                        row = page_row;
+                    }
+                } else {
+                    col += 1;
+                    if col >= cols {
+                        col = 0;
+                        row += 1;
+                    }
                 }
+            }
+
+            for row_elements in grid_elements {
+                for element in row_elements {
+                    grid = grid.push(element);
+                }
+                grid = grid.insert_row();
             }
 
             if count == 0 {
@@ -2671,12 +2718,13 @@ impl Tab {
                                     item.selected,
                                     false,
                                     false,
+                                    false,
                                 )),
                                 widget::button(widget::text(item.display_name.clone()))
                                     .id(item.button_id.clone())
                                     .on_press(Message::Click(Some(*i)))
                                     .padding([0, space_xxxs])
-                                    .style(button_style(item.selected, true, true)),
+                                    .style(button_style(item.selected, true, true, false)),
                             ];
 
                             let mut column = widget::column::with_capacity(buttons.len())
@@ -2859,7 +2907,7 @@ impl Tab {
                                     space_xxs
                                 }
                             })
-                            .style(button_style(item.selected, true, false)),
+                            .style(button_style(item.selected, true, false, false)),
                     )
                     .on_press(move |_| Message::Click(Some(i)))
                     .on_double_click(move |_| Message::DoubleClick(Some(i)))
