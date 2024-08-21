@@ -109,7 +109,6 @@ restored = Restored {$items} {$items ->
         [one] item
         *[other] items
     } from {trash}
-undo = Undo
 unknown-folder = unknown folder
 
 ## Open with

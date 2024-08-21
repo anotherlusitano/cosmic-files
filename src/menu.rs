@@ -95,7 +95,7 @@ pub fn context_menu<'a>(
     selected_types.sort_unstable();
     selected_types.dedup();
 
-    let is_app = matches!(tab.mode, tab::Mode::App);
+    let is_app = matches!(tab.mode, tab::Mode::App | tab::Mode::Desktop);
 
     let mut children: Vec<Element<_>> = Vec::new();
     match tab.location {
