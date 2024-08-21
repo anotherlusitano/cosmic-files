@@ -213,18 +213,24 @@ fn hidden_attribute(metadata: &Metadata) -> bool {
     metadata.file_attributes() & FILE_ATTRIBUTE_HIDDEN == FILE_ATTRIBUTE_HIDDEN
 }
 
-pub fn icon_for_desktop_file(path: &Path) -> Option<String> {
+pub fn parse_desktop_file(path: &Path) -> (Option<String>, Option<String>) {
     let entry = match freedesktop_entry_parser::parse_entry(path) {
         Ok(ok) => ok,
         Err(err) => {
             log::warn!("failed to parse {:?}: {}", path, err);
-            return None;
+            return (None, None);
         }
     };
-    entry
-        .section("Desktop Entry")
-        .attr("Icon")
-        .map(|x| x.to_string())
+    (
+        entry
+            .section("Desktop Entry")
+            .attr("Name")
+            .map(|x| x.to_string()),
+        entry
+            .section("Desktop Entry")
+            .attr("Icon")
+            .map(|x| x.to_string()),
+    )
 }
 
 pub fn item_from_entry(
@@ -233,7 +239,7 @@ pub fn item_from_entry(
     metadata: fs::Metadata,
     sizes: IconSizes,
 ) -> Item {
-    let grid_name = Item::grid_name(&name);
+    let mut display_name = Item::display_name(&name);
 
     let hidden = name.starts_with(".") || hidden_attribute(&metadata);
 
@@ -250,7 +256,11 @@ pub fn item_from_entry(
             let mime = mime_for_path(&path);
             //TODO: clean this up, implement for trash
             let icon_name_opt = if mime == "application/x-desktop" {
-                icon_for_desktop_file(&path)
+                let (desktop_name_opt, icon_name_opt) = parse_desktop_file(&path);
+                if let Some(desktop_name) = desktop_name_opt {
+                    display_name = Item::display_name(&desktop_name);
+                }
+                icon_name_opt
             } else {
                 None
             };
@@ -304,7 +314,7 @@ pub fn item_from_entry(
 
     Item {
         name,
-        grid_name,
+        display_name,
         metadata: ItemMetadata::Path { metadata, children },
         hidden,
         path_opt: Some(path),
@@ -386,7 +396,7 @@ pub fn scan_path(tab_path: &PathBuf, sizes: IconSizes) -> Vec<Item> {
     items.sort_by(|a, b| match (a.metadata.is_dir(), b.metadata.is_dir()) {
         (true, false) => Ordering::Less,
         (false, true) => Ordering::Greater,
-        _ => LANGUAGE_SORTER.compare(&a.name, &b.name),
+        _ => LANGUAGE_SORTER.compare(&a.display_name, &b.display_name),
     });
     items
 }
@@ -523,7 +533,7 @@ pub fn scan_trash(sizes: IconSizes) -> Vec<Item> {
 
                 let original_path = entry.original_path();
                 let name = entry.name.to_string_lossy().to_string();
-                let grid_name = Item::grid_name(&name);
+                let display_name = Item::display_name(&name);
 
                 let (mime, icon_handle_grid, icon_handle_list, icon_handle_list_condensed) =
                     match metadata.size {
@@ -548,7 +558,7 @@ pub fn scan_trash(sizes: IconSizes) -> Vec<Item> {
 
                 items.push(Item {
                     name,
-                    grid_name,
+                    display_name,
                     metadata: ItemMetadata::Trash { metadata, entry },
                     hidden: false,
                     path_opt: None,
@@ -573,7 +583,7 @@ pub fn scan_trash(sizes: IconSizes) -> Vec<Item> {
     items.sort_by(|a, b| match (a.metadata.is_dir(), b.metadata.is_dir()) {
         (true, false) => Ordering::Less,
         (false, true) => Ordering::Greater,
-        _ => LANGUAGE_SORTER.compare(&a.name, &b.name),
+        _ => LANGUAGE_SORTER.compare(&a.display_name, &b.display_name),
     });
     items
 }
@@ -711,7 +721,7 @@ pub enum ItemThumbnail {
 #[derive(Clone, Debug)]
 pub struct Item {
     pub name: String,
-    pub grid_name: String,
+    pub display_name: String,
     pub metadata: ItemMetadata,
     pub hidden: bool,
     pub path_opt: Option<PathBuf>,
@@ -729,7 +739,7 @@ pub struct Item {
 }
 
 impl Item {
-    fn grid_name(name: &str) -> String {
+    fn display_name(name: &str) -> String {
         // In order to wrap at periods and underscores, add a zero width space after each one
         name.replace(".", ".\u{200B}").replace("_", "_\u{200B}")
     }
@@ -2009,12 +2019,15 @@ impl Tab {
                         (true, false) => Ordering::Less,
                         (false, true) => Ordering::Greater,
                         _ => check_reverse(
-                            LANGUAGE_SORTER.compare(&a.1.name, &b.1.name),
+                            LANGUAGE_SORTER.compare(&a.1.display_name, &b.1.display_name),
                             heading_sort,
                         ),
                     }
                 } else {
-                    check_reverse(LANGUAGE_SORTER.compare(&a.1.name, &b.1.name), heading_sort)
+                    check_reverse(
+                        LANGUAGE_SORTER.compare(&a.1.display_name, &b.1.display_name),
+                        heading_sort,
+                    )
                 }
             }),
             HeadingOptions::Modified => {
@@ -2498,7 +2511,7 @@ impl Tab {
                     )
                     .padding(space_xxxs)
                     .style(button_style(item.selected, false, false)),
-                    widget::button(widget::text::body(&item.grid_name))
+                    widget::button(widget::text::body(&item.display_name))
                         .id(item.button_id.clone())
                         .padding([0, space_xxxs])
                         .style(button_style(item.selected, true, true)),
@@ -2659,7 +2672,7 @@ impl Tab {
                                     false,
                                     false,
                                 )),
-                                widget::button(widget::text(item.grid_name.clone()))
+                                widget::button(widget::text(item.display_name.clone()))
                                     .id(item.button_id.clone())
                                     .on_press(Message::Click(Some(*i)))
                                     .padding([0, space_xxxs])
@@ -2802,7 +2815,7 @@ impl Tab {
                             .size(icon_size)
                             .into(),
                         widget::column::with_children(vec![
-                            widget::text(item.name.clone()).into(),
+                            widget::text(item.display_name.clone()).into(),
                             //TODO: translate?
                             widget::text::caption(format!("{} - {}", modified_text, size_text))
                                 .into(),
@@ -2817,7 +2830,9 @@ impl Tab {
                             .content_fit(ContentFit::Contain)
                             .size(icon_size)
                             .into(),
-                        widget::text(item.name.clone()).width(Length::Fill).into(),
+                        widget::text(item.display_name.clone())
+                            .width(Length::Fill)
+                            .into(),
                         widget::text(modified_text.clone())
                             .width(Length::Fixed(modified_width))
                             .into(),
@@ -2924,7 +2939,7 @@ impl Tab {
                                 .size(icon_size)
                                 .into(),
                             widget::column::with_children(vec![
-                                widget::text(item.name.clone()).into(),
+                                widget::text(item.display_name.clone()).into(),
                                 //TODO: translate?
                                 widget::text(format!("{} - {}", modified_text, size_text)).into(),
                             ])
@@ -2939,7 +2954,9 @@ impl Tab {
                                 .content_fit(ContentFit::Contain)
                                 .size(icon_size)
                                 .into(),
-                            widget::text(item.name.clone()).width(Length::Fill).into(),
+                            widget::text(item.display_name.clone())
+                                .width(Length::Fill)
+                                .into(),
                             widget::text(modified_text)
                                 .width(Length::Fixed(modified_width))
                                 .into(),
