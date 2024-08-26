@@ -297,6 +297,7 @@ enum Message {
     Save(bool),
     TabMessage(tab::Message),
     TabRescan(Vec<tab::Item>),
+    ViewSelect(segmented_button::Entity),
 }
 
 struct WatcherWrapper {
@@ -337,6 +338,7 @@ struct App {
     replace_dialog: bool,
     tab: Tab,
     key_binds: HashMap<KeyBind, Action>,
+    view_model: segmented_button::SingleSelectModel,
     watcher_opt: Option<(Debouncer<RecommendedWatcher, FileIdMap>, HashSet<PathBuf>)>,
 }
 
@@ -434,6 +436,7 @@ impl Application for App {
 
     /// Creates the application, and optionally emits command on initialize.
     fn init(mut core: Core, flags: Self::Flags) -> (Self, Command<Message>) {
+        core.window.show_close = false;
         core.window.show_maximize = false;
         core.window.show_minimize = false;
         //TODO: make set_nav_bar_toggle_condensed pub
@@ -450,6 +453,7 @@ impl Application for App {
                     .data(Location::Path(dir.clone()))
             });
         }
+        //TODO: GET FROM CONFIG
         //TODO: Sort by name?
         for dir_opt in &[
             dirs::document_dir(),
@@ -479,7 +483,19 @@ impl Application for App {
 
         let mut tab = Tab::new(location, TabConfig::default());
         tab.mode = tab::Mode::Dialog(flags.kind.clone());
-        tab.config.view = tab::View::List;
+        tab.config.view = tab::View::Grid;
+
+        let view_model = segmented_button::SingleSelectModel::builder()
+            .insert(|b| {
+                b.icon(widget::icon::from_name("view-grid-symbolic"))
+                    .data(tab::View::Grid)
+                    .activate()
+            })
+            .insert(|b| {
+                b.icon(widget::icon::from_name("view-list-symbolic"))
+                    .data(tab::View::List)
+            })
+            .build();
 
         let mut app = App {
             core,
@@ -496,6 +512,7 @@ impl Application for App {
             replace_dialog: false,
             tab,
             key_binds: HashMap::new(),
+            view_model,
             watcher_opt: None,
         };
 
@@ -526,6 +543,19 @@ impl Application for App {
             }
         }
         None
+    }
+
+    fn header_end(&self) -> Vec<Element<Message>> {
+        vec![
+            /*TODO: search and new folder buttons
+            widget::button::icon(widget::icon::from_name("system-search-symbolic")).into(),
+            widget::button::icon(widget::icon::from_name("folder-new-symbolic")).into(),
+            */
+            widget::segmented_control::horizontal(&self.view_model)
+                .on_activate(Message::ViewSelect)
+                .width(Length::Shrink)
+                .into(),
+        ]
     }
 
     fn nav_model(&self) -> Option<&segmented_button::SingleSelectModel> {
@@ -853,6 +883,13 @@ impl Application for App {
                 // Reset focus on location change
                 return widget::text_input::focus(self.filename_id.clone());
             }
+            Message::ViewSelect(entity) => match self.view_model.data::<tab::View>(entity) {
+                Some(view) => {
+                    self.tab.config.view = *view;
+                    self.view_model.activate(entity);
+                }
+                None => {}
+            },
         }
 
         Command::none()

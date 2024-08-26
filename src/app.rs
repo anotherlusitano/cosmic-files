@@ -31,6 +31,7 @@ use cosmic::{
         dnd_destination::DragId,
         menu::{action::MenuAction, key_bind::KeyBind},
         segmented_button::{self, Entity},
+        ToastId,
     },
     Application, ApplicationExt, Element,
 };
@@ -229,7 +230,7 @@ impl MenuAction for NavMenuAction {
 pub enum Message {
     AddToSidebar(Option<Entity>),
     AppTheme(AppTheme),
-    CloseToast(usize),
+    CloseToast(ToastId),
     Config(Config),
     Copy(Option<Entity>),
     Cut(Option<Entity>),
@@ -281,7 +282,7 @@ pub enum Message {
     TabRescan(Entity, Location, Vec<tab::Item>, Option<PathBuf>),
     ToggleContextPage(ContextPage),
     Undo(usize),
-    UndoTrash(usize, Arc<[PathBuf]>),
+    UndoTrash(ToastId, Arc<[PathBuf]>),
     UndoTrashStart(Vec<TrashItem>),
     WindowClose,
     WindowNew,
